@@ -1,0 +1,9 @@
+old
+collector/otelcol-contrib
+.dart_tool
+pubspec.lock
+node_modules
+
+#
+code/js/*/package.json
+code/js/*/package-lock.json
