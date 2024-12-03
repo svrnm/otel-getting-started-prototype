@@ -29,14 +29,14 @@ function stop_collector() {
 
 function check() {
     local retry_count=0
-    local max_retries=7
+    local max_retries=15
     local response=0
 
     DIR=${1}
-    docker run -d --rm --name fib_remote --network fib_network -v ${PWD}/${DIR}:/code -w /code --entrypoint "/bin/bash" -e OTEL_EXPORTER_OTLP_ENDPOINT="http://fib_collector:4318" -e OTEL_SERVICE_NAME="fibonacci-remote" -e APPLICATION_PORT=8090 -p 8090:8090 node:lts -c "./run.sh"
-    docker run -d --rm --name fib_service --network fib_network -v ${PWD}/${DIR}:/code -w /code --entrypoint "/bin/bash" -e OTEL_EXPORTER_OTLP_ENDPOINT="http://fib_collector:4318" -e OTEL_SERVICE_NAME="fibonacci-server" -e LEFT_REMOTE_SERVICE="http://fib_remote:8090" -e RIGHT_REMOTE_SERVICE="http://fib_remote:8090"  -e APPLICATION_PORT=8080 -p 8080:8080 node:lts -c "./run.sh"
+    # docker run -d --rm --name fib_remote --network fib_network -v ${PWD}/${DIR}:/code -w /code --entrypoint "/bin/bash" -e OTEL_EXPORTER_OTLP_ENDPOINT="http://fib_collector:4318" -e OTEL_SERVICE_NAME="fibonacci-remote" -e APPLICATION_PORT=8090 -p 8090:8090 golang:1.23 -c "./run.sh"
+    docker run --rm --name fib_service --network fib_network -v ${PWD}/${DIR}:/code -w /code --entrypoint "/bin/bash" -e OTEL_EXPORTER_OTLP_ENDPOINT="http://fib_collector:4318" -e OTEL_SERVICE_NAME="fibonacci-server" -e LEFT_REMOTE_SERVICE="http://fib_remote:8090" -e RIGHT_REMOTE_SERVICE="http://fib_remote:8090"  -e APPLICATION_PORT=8080 -p 8080:8080 golang:1.23 -c "./run.sh"
     while true; do
-        response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/fibonacci?n=5)
+        response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/fibonacci/?n=5)
         if [ "$response" -eq 200 ]; then
             echo -e "${GREEN}Service is up with 200 OK response!${NC}"
             break
@@ -58,30 +58,33 @@ function generate() {
     DIR=${1}
     shift 1
     UNIFDEF_WITH_VARS="${UNIFDEF} $(echo "$@")"
-    ${UNIFDEF_WITH_VARS} _base/app.js > "${DIR}/app.js"
-    ${UNIFDEF_WITH_VARS} _base/lib.js > "${DIR}/lib.js"
+    ${UNIFDEF_WITH_VARS} _base/main.go > "${DIR}/main.go"
+    ${UNIFDEF_WITH_VARS} _base/fibonacci.go > "${DIR}/fibonacci.go"
+    if [ $DIR != "0-uninstrumented" ]; then
+        ${UNIFDEF_WITH_VARS} _base/otel.go > "${DIR}/otel.go"
+    fi
     npx prettier -w ${DIR}
-    node --check ${DIR}/app.js
-    node --check ${DIR}/lib.js
+    go vet ${DIR}/main.go ${DIR}/fibonacci.go
     check ${DIR}
 }
 
 start_collector
 
-cat _base/00-init.sh _base/99-run.sh > 0-uninstrumented/run.sh
-chmod +x 0-uninstrumented/run.sh
-generate 0-uninstrumented -UADD_BASE_INSTRUMENTATION -UADD_OTLP_EXPORTERS -UADD_REMOTE_COMPUTATION
+# rm 0-uninstrumented/go.mod
+# cat _base/00-init.sh _base/99-run.sh > 0-uninstrumented/run.sh
+# chmod +x 0-uninstrumented/run.sh
+# generate 0-uninstrumented -UADD_BASE_INSTRUMENTATION -UADD_OTLP_EXPORTERS -UADD_REMOTE_COMPUTATION
 
-cat _base/00-init.sh _base/01-add-otel-dependencies.sh _base/99-run.sh > 1-instrumented/run.sh
-chmod +x 1-instrumented/run.sh
-generate 1-instrumented -DADD_BASE_INSTRUMENTATION -UADD_OTLP_EXPORTERS -UADD_REMOTE_COMPUTATION
+# cat _base/00-init.sh _base/01-add-otel-dependencies.sh _base/99-run.sh > 1-instrumented/run.sh
+# chmod +x 1-instrumented/run.sh
+# generate 1-instrumented -DADD_BASE_INSTRUMENTATION -UADD_OTLP_EXPORTERS -UADD_REMOTE_COMPUTATION
 
 cat _base/00-init.sh _base/01-add-otel-dependencies.sh _base/02-add-otlp-dependencies.sh _base/99-run.sh > 2-with-otlp/run.sh
 chmod +x 2-with-otlp/run.sh
 generate 2-with-otlp -DADD_BASE_INSTRUMENTATION -DADD_OTLP_EXPORTERS -UADD_REMOTE_COMPUTATION
 
-cat _base/00-init.sh _base/01-add-otel-dependencies.sh _base/02-add-otlp-dependencies.sh _base/03-add-http-client-dependencies.sh _base/99-run.sh > 3-distributed-services/run.sh
-chmod +x 3-distributed-services/run.sh
-generate 3-distributed-services -DADD_BASE_INSTRUMENTATION -DADD_OTLP_EXPORTERS -DADD_REMOTE_COMPUTATION
+# generate 3-distributed-services -DADD_BASE_INSTRUMENTATION -DADD_OTLP_EXPORTERS -DADD_REMOTE_COMPUTATION
+# cat _base/00-init.sh _base/01-add-otel-dependencies.sh _base/02-add-otlp-dependencies.sh _base/03-add-http-client-dependencies.sh _base/99-run.sh > 3-distributed-services/run.sh
+# chmod +x 3-distributed-services/run.sh
 
 stop_collector

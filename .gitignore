@@ -7,3 +7,5 @@ node_modules
 #
 code/js/*/package.json
 code/js/*/package-lock.json
+go.sum
+go.mod
